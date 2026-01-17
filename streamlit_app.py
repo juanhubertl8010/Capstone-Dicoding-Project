@@ -2,15 +2,31 @@ import streamlit as st
 import numpy as np
 import joblib
 import matplotlib.pyplot as plt
+import gdown
+import os
 
 # =====================================================
 # LOAD MODELS
 # =====================================================
+# Logistic model tetap dari file lokal
 try:
     logistic_model = joblib.load("logistic_model.pkl")
-    rf_model = joblib.load("randomforest.pkl")
 except Exception as e:
-    st.error(f"Gagal memuat model: {e}")
+    st.error(f"Gagal memuat logistic_model: {e}")
+    st.stop()
+
+# Random Forest: download otomatis dari Google Drive
+RF_FILE = "randomforest.pkl"
+RF_DRIVE_ID = "1Cq3Cj3yUyj18sXysJpUdmMKPAYGxb6Pw"
+
+if not os.path.exists(RF_FILE):
+    url = f"https://drive.google.com/uc?id={RF_DRIVE_ID}"
+    gdown.download(url, RF_FILE, quiet=False)
+
+try:
+    rf_model = joblib.load(RF_FILE)
+except Exception as e:
+    st.error(f"Gagal memuat randomforest model: {e}")
     st.stop()
 
 # =====================================================
@@ -23,7 +39,7 @@ st.set_page_config(
 
 st.title("📊 Financial Spending Analysis (ML-Based)")
 st.write(
-    "Analisis kondisi keuangan sepenuhnya berbasis Machine Learning "
+    "Analisis kondisi keuangan berbasis Machine Learning "
     "menggunakan rasio pengeluaran dan tabungan."
 )
 
@@ -49,18 +65,10 @@ if st.button("🔍 Analisis Keuangan"):
         st.error("Pendapatan harus lebih dari 0.")
         st.stop()
 
-    # -------------------------------------------------
-    # PERHITUNGAN DASAR
-    # -------------------------------------------------
     total_expense = food + transport + entertainment + shopping + others
     remaining = income - total_expense
-
     saving_ratio_raw = remaining / income
-    saving_ratio_ui = max(min(saving_ratio_raw, 1), 0)
 
-    # -------------------------------------------------
-    # FEATURE VECTOR
-    # -------------------------------------------------
     X = np.array([[
         food / income,
         transport / income,
@@ -70,53 +78,37 @@ if st.button("🔍 Analisis Keuangan"):
         saving_ratio_raw
     ]])
 
-    # -------------------------------------------------
-    # LOGISTIC REGRESSION
-    # -------------------------------------------------
+    # Logistic Regression
     proba = logistic_model.predict_proba(X)[0]
     classes = logistic_model.classes_
-
     pred_class = classes[np.argmax(proba)]
     status = "HEMAT" if pred_class == 1 else "BOROS"
 
-    # -------------------------------------------------
-    # RANDOM FOREST (TARGET TABUNGAN IDEAL)
-    # -------------------------------------------------
+    # Random Forest
     ideal_saving_ratio = rf_model.predict(X)[0]
     ideal_saving_ratio = max(min(ideal_saving_ratio, 1), 0)
-
     gap_ratio = ideal_saving_ratio - saving_ratio_raw
     gap_amount = max(gap_ratio * income, 0)
 
     # =================================================
-    # OUTPUT
-    # =================================================
     st.subheader("📌 Status Keuangan")
-
     if status == "HEMAT":
         st.success("✅ HEMAT — Berdasarkan prediksi Machine Learning")
     else:
         st.error("❌ BOROS — Berdasarkan prediksi Machine Learning")
 
-    # -------------------------------------------------
-    # RINGKASAN
-    # -------------------------------------------------
+    # Ringkasan
     st.markdown("### 📄 Ringkasan Keuangan")
-    st.write(f"""
-    - **Total Pengeluaran:** Rp {total_expense:,.0f}  
-    - **Sisa Pendapatan:** Rp {remaining:,.0f}  
-    """)
+    st.write(f"- **Total Pengeluaran:** Rp {total_expense:,.0f}")
+    st.write(f"- **Sisa Pendapatan:** Rp {remaining:,.0f}")
 
     st.caption(
         f"📊 Probabilitas ML → BOROS: {proba[classes.tolist().index(0)]:.2f} | "
         f"HEMAT: {proba[classes.tolist().index(1)]:.2f}"
     )
 
-    # -------------------------------------------------
-    # REKOMENDASI (LOGIS & KONSISTEN)
-    # -------------------------------------------------
+    # Rekomendasi
     st.subheader("💡 Rekomendasi Pengeluaran")
-
     categories = {
         "Makan & Minum": food,
         "Transportasi": transport,
@@ -124,67 +116,33 @@ if st.button("🔍 Analisis Keuangan"):
         "Belanja": shopping,
         "Sewa": others
     }
+    sorted_categories = sorted(categories.items(), key=lambda x: x[1], reverse=True)
 
-    sorted_categories = sorted(
-        categories.items(),
-        key=lambda x: x[1],
-        reverse=True
-    )
-
-    # =========================
-    # JIKA BOROS → ADA POTONGAN
-    # =========================
     if status == "BOROS" and gap_amount > 0:
         st.warning(
-            f"🔻 Untuk mencapai kondisi lebih hemat, "
-            f"disarankan mengurangi pengeluaran sekitar "
-            f"**Rp {gap_amount:,.0f}**."
+            f"🔻 Untuk lebih hemat, disarankan mengurangi pengeluaran sekitar Rp {gap_amount:,.0f}."
         )
-
-        st.write("Distribusi pengurangan yang disarankan:")
-
         total_expense = sum(categories.values())
-
         for cat, val in sorted_categories:
             proporsi = val / total_expense
             suggested_cut = proporsi * gap_amount
-
             if suggested_cut >= 10_000:
-                st.write(
-                    f"• **{cat}** → kurangi sekitar **Rp {suggested_cut:,.0f}**"
-                )
-
-    # =========================
-    # JIKA HEMAT → TIDAK ADA POTONGAN
-    # =========================
+                st.write(f"• **{cat}** → kurangi sekitar **Rp {suggested_cut:,.0f}**")
     else:
-        st.success(
-            "✅ Pengeluaran Anda sudah berada dalam kondisi **HEMAT**. "
-            "Tidak diperlukan pengurangan pengeluaran saat ini."
-        )
+        st.success("✅ Pengeluaran Anda sudah hemat. Tidak perlu pengurangan.")
 
     st.caption(
         "📌 Status BOROS/HEMAT ditentukan oleh Logistic Regression. "
         "Random Forest digunakan untuk estimasi target tabungan ideal."
     )
-        # =================================================
-    # PIE CHART: KOMPOSISI KEUANGAN (100%)
-    # =================================================
+
+    # Pie Chart
     st.subheader("📊 Komposisi Pengeluaran vs Tabungan")
-
     saving_amount = max(remaining, 0)
-
     labels = ["Pengeluaran", "Tabungan"]
     values = [total_expense, saving_amount]
 
     fig, ax = plt.subplots()
-    ax.pie(
-        values,
-        labels=labels,
-        autopct="%1.1f%%",
-        startangle=90,
-        wedgeprops={"edgecolor": "white"}
-    )
+    ax.pie(values, labels=labels, autopct="%1.1f%%", startangle=90, wedgeprops={"edgecolor": "white"})
     ax.axis("equal")
-
     st.pyplot(fig)
