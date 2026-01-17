@@ -7,8 +7,8 @@ import matplotlib.pyplot as plt
 # LOAD MODELS
 # =====================================================
 try:
-    logistic_model = joblib.load("model/logistic_model.pkl")
-    rf_model = joblib.load("model/randomforest.pkl")
+    logistic_model = joblib.load("logistic_model.pkl")
+    rf_model = joblib.load("randomforest.pkl")
 except Exception as e:
     st.error(f"Gagal memuat model: {e}")
     st.stop()
